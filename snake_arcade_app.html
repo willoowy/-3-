@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Snake Arcade Neon</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=Rajdhani:wght@600;700&display=swap" rel="stylesheet" />
+  <style>
+    .font-arcade { font-family: 'Press Start 2P', cursive; }
+    .font-ui { font-family: 'Rajdhani', sans-serif; }
+    .neon-green { text-shadow: 0 0 8px #00ff66, 0 0 20px #00ff66; }
+    .neon-cyan { text-shadow: 0 0 8px #00f3ff, 0 0 20px #00f3ff; }
+    .neon-box-green { box-shadow: 0 0 15px rgba(0, 255, 102, 0.4), inset 0 0 10px rgba(0, 255, 102, 0.2); }
+    .btn-active:active { transform: scale(0.95); }
+    canvas { image-rendering: pixelated; }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-ui min-h-screen flex flex-col justify-between items-center p-3 sm:p-6 select-none">
+
+  <!-- Header -->
+  <header class="w-full max-w-md flex justify-between items-center pb-4 border-b border-emerald-500/30">
+    <div class="flex items-center gap-3">
+      <span class="text-2xl">🐍</span>
+      <h1 class="text-lg sm:text-xl font-arcade text-emerald-400 neon-green">SNAKE <span class="text-cyan-400 neon-cyan">ARCADE</span></h1>
+    </div>
+    <button id="mute-btn" onclick="toggleMute()" class="px-3 py-1.5 rounded-xl border border-slate-700 bg-slate-900 text-xs font-arcade text-emerald-400">
+      🔊 <span id="mute-text">SOUND</span>
+    </button>
+  </header>
+
+  <!-- Controls Panel & Stats -->
+  <main class="w-full max-w-md flex flex-col items-center gap-4 my-auto pt-4">
+    <div class="w-full flex justify-between items-center bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+      <div>
+        <span class="text-[10px] font-arcade text-slate-400 block">SCORE</span>
+        <span id="score" class="text-xl font-arcade text-emerald-400 neon-green">0</span>
+      </div>
+      <div>
+        <span class="text-[10px] font-arcade text-slate-400 block">HIGH</span>
+        <span id="highscore" class="text-xl font-arcade text-cyan-400 neon-cyan">0</span>
+      </div>
+      <div>
+        <span class="text-[10px] font-arcade text-slate-400 block">SPEED</span>
+        <select id="speed-select" onchange="changeSpeed(this.value)" class="bg-slate-950 text-yellow-400 font-arcade text-[10px] p-1 rounded border border-slate-700 outline-none">
+          <option value="140">EASY</option>
+          <option value="100" selected>MEDIUM</option>
+          <option value="60">FAST</option>
+        </select>
+      </div>
+    </div>
+
+    <!-- Game Canvas Wrapper -->
+    <div class="relative bg-slate-900 p-2 rounded-2xl border-2 border-emerald-500 neon-box-green">
+      <canvas id="snake-canvas" width="320" height="320" class="bg-slate-950 rounded-lg"></canvas>
+
+      <!-- Game Over Screen -->
+      <div id="game-over" class="hidden absolute inset-0 bg-slate-950/90 rounded-2xl flex flex-col items-center justify-center p-4 text-center z-20">
+        <h2 class="text-xl font-arcade text-emerald-400 neon-green mb-4">GAME OVER</h2>
+        <p class="text-xs font-arcade text-slate-400 mb-2">SCORE: <span id="final-score" class="text-cyan-400">0</span></p>
+        <button onclick="startGame()" class="mt-4 px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 font-arcade text-xs rounded-xl border border-emerald-400 neon-box-green btn-active">
+          RETRY
+        </button>
+      </div>
+    </div>
+  </main>
+
+  <!-- Mobile D-Pad Controller -->
+  <footer class="w-full max-w-md my-4 flex justify-center items-center bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
+    <div class="grid grid-cols-3 gap-2 w-44 h-44">
+      <div></div>
+      <button onpointerdown="handleInput('UP')" class="bg-slate-800 text-emerald-400 rounded-xl flex items-center justify-center border border-slate-700 btn-active text-xl">▲</button>
+      <div></div>
+      <button onpointerdown="handleInput('LEFT')" class="bg-slate-800 text-emerald-400 rounded-xl flex items-center justify-center border border-slate-700 btn-active text-xl">◀</button>
+      <button onpointerdown="handleInput('DOWN')" class="bg-slate-800 text-emerald-400 rounded-xl flex items-center justify-center border border-slate-700 btn-active text-xl">▼</button>
+      <button onpointerdown="handleInput('RIGHT')" class="bg-slate-800 text-emerald-400 rounded-xl flex items-center justify-center border border-slate-700 btn-active text-xl">▶</button>
+    </div>
+  </footer>
+
+  <script>
+    // Audio Synthesizer
+    let isMuted = false;
+    const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    function playSound(type) {
+      if (isMuted) return;
+      try {
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        const now = audioCtx.currentTime;
+
+        if (type === 'eat') {
+          osc.type = 'sine'; osc.frequency.setValueAtTime(300, now); osc.frequency.exponentialRampToValueAtTime(700, now + 0.08);
+          gain.gain.setValueAtTime(0.15, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.08);
+          osc.start(now); osc.stop(now + 0.08);
+        } else if (type === 'die') {
+          osc.type = 'sawtooth'; osc.frequency.setValueAtTime(250, now); osc.frequency.linearRampToValueAtTime(80, now + 0.3);
+          gain.gain.setValueAtTime(0.2, now); gain.gain.linearRampToValueAtTime(0.01, now + 0.3);
+          osc.start(now); osc.stop(now + 0.3);
+        }
+      } catch(e){}
+    }
+    function toggleMute() {
+      isMuted = !isMuted;
+      document.getElementById('mute-text').textContent = isMuted ? 'OFF' : 'SOUND';
+    }
+
+    // Snake Engine
+    const canvas = document.getElementById('snake-canvas');
+    const ctx = canvas.getContext('2d');
+    const GRID_SIZE = 16;
+    const TILE_COUNT = 20;
+
+    let snake = [], dir = { x: 0, y: -1 }, nextDir = { x: 0, y: -1 };
+    let food = { x: 0, y: 0 }, obstacles = [];
+    let score = 0, highScore = parseInt(localStorage.getItem('snake_pro_high') || '0');
+    let speed = 100, lastTime = 0, moveTimer = 0, isGameOver = false;
+
+    function startGame() {
+      snake = [{ x: 10, y: 10 }, { x: 10, y: 11 }, { x: 10, y: 12 }];
+      dir = { x: 0, y: -1 };
+      nextDir = { x: 0, y: -1 };
+      score = 0;
+      isGameOver = false;
+      document.getElementById('game-over').classList.add('hidden');
+      generateObstacles();
+      spawnFood();
+      updateUI();
+    }
+
+    function generateObstacles() {
+      obstacles = [
+        { x: 4, y: 4 }, { x: 5, y: 4 },
+        { x: 14, y: 15 }, { x: 15, y: 15 }
+      ];
+    }
+
+    function spawnFood() {
+      while (true) {
+        food.x = Math.floor(Math.random() * TILE_COUNT);
+        food.y = Math.floor(Math.random() * TILE_COUNT);
+        const inSnake = snake.some(s => s.x === food.x && s.y === food.y);
+        const inObs = obstacles.some(o => o.x === food.x && o.y === food.y);
+        if (!inSnake && !inObs) break;
+      }
+    }
+
+    function changeSpeed(val) {
+      speed = parseInt(val);
+    }
+
+    function update(delta) {
+      moveTimer += delta;
+      if (moveTimer < speed) return;
+      moveTimer = 0;
+
+      dir = { ...nextDir };
+      const head = { x: snake[0].x + dir.x, y: snake[0].y + dir.y };
+
+      // Wall / Self / Obstacle Collision
+      if (
+        head.x < 0 || head.x >= TILE_COUNT || head.y < 0 || head.y >= TILE_COUNT ||
+        snake.some(s => s.x === head.x && s.y === head.y) ||
+        obstacles.some(o => o.x === head.x && o.y === head.y)
+      ) {
+        playSound('die');
+        isGameOver = true;
+        document.getElementById('final-score').textContent = score;
+        document.getElementById('game-over').classList.remove('hidden');
+        return;
+      }
+
+      snake.unshift(head);
+
+      // Food Collision
+      if (head.x === food.x && head.y === food.y) {
+        playSound('eat');
+        score += 10;
+        if (score > highScore) {
+          highScore = score;
+          localStorage.setItem('snake_pro_high', highScore);
+        }
+        spawnFood();
+        updateUI();
+      } else {
+        snake.pop();
+      }
+    }
+
+    function render() {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Grid Lines
+      ctx.strokeStyle = '#0f172a';
+      for (let i = 0; i < TILE_COUNT; i++) {
+        for (let j = 0; j < TILE_COUNT; j++) {
+          ctx.strokeRect(i * GRID_SIZE, j * GRID_SIZE, GRID_SIZE, GRID_SIZE);
+        }
+      }
+
+      // Obstacles
+      ctx.fillStyle = '#64748b';
+      obstacles.forEach(o => {
+        ctx.fillRect(o.x * GRID_SIZE + 1, o.y * GRID_SIZE + 1, GRID_SIZE - 2, GRID_SIZE - 2);
+      });
+
+      // Food
+      ctx.fillStyle = '#ff007f';
+      ctx.beginPath();
+      ctx.arc((food.x + 0.5) * GRID_SIZE, (food.y + 0.5) * GRID_SIZE, GRID_SIZE / 2 - 2, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Snake Body
+      snake.forEach((s, idx) => {
+        ctx.fillStyle = idx === 0 ? '#00f3ff' : '#00ff66';
+        ctx.fillRect(s.x * GRID_SIZE + 1, s.y * GRID_SIZE + 1, GRID_SIZE - 2, GRID_SIZE - 2);
+      });
+    }
+
+    function updateUI() {
+      document.getElementById('score').textContent = score;
+      document.getElementById('highscore').textContent = highScore;
+    }
+
+    function loop(time = 0) {
+      const delta = time - lastTime;
+      lastTime = time;
+
+      if (!isGameOver) {
+        update(delta);
+        render();
+      }
+      requestAnimationFrame(loop);
+    }
+
+    function handleInput(action) {
+      if (isGameOver) return;
+      if (action === 'UP' && dir.y !== 1) nextDir = { x: 0, y: -1 };
+      if (action === 'DOWN' && dir.y !== -1) nextDir = { x: 0, y: 1 };
+      if (action === 'LEFT' && dir.x !== 1) nextDir = { x: -1, y: 0 };
+      if (action === 'RIGHT' && dir.x !== -1) nextDir = { x: 1, y: 0 };
+    }
+
+    window.addEventListener('keydown', (e) => {
+      if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault();
+      if (e.key === 'ArrowUp' || e.key === 'w') handleInput('UP');
+      if (e.key === 'ArrowDown' || e.key === 's') handleInput('DOWN');
+      if (e.key === 'ArrowLeft' || e.key === 'a') handleInput('LEFT');
+      if (e.key === 'ArrowRight' || e.key === 'd') handleInput('RIGHT');
+    });
+
+    startGame();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
